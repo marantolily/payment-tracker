@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Payment — Family Loan Tracker</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/auth.js"></script>
+  <script>requireAuth();</script>
+</head>
+<body>
+  <div class="container">
+    <a href="index.html" class="back-link">&larr; Back to Dashboard</a>
+
+    <header>
+      <h1>Add Payment</h1>
+      <p>Record a payment and upload confirmation photos</p>
+    </header>
+
+    <div id="message"></div>
+
+    <div class="card">
+      <form id="payment-form">
+        <div class="form-group" id="amount-group">
+          <label for="amount">Amount Paid <span class="required">*</span></label>
+          <input
+            type="number"
+            id="amount"
+            name="amount"
+            step="0.01"
+            min="0.01"
+            placeholder="458.59"
+            required
+            aria-required="true"
+          >
+          <p class="field-error" id="amount-error" hidden></p>
+          <p class="form-hint">Suggested monthly payment: $458.59</p>
+        </div>
+
+        <div class="form-group" id="date-group">
+          <label for="date-paid">Date Paid <span class="required">*</span></label>
+          <input type="date" id="date-paid" name="date-paid" required aria-required="true">
+          <p class="field-error" id="date-error" hidden></p>
+        </div>
+
+        <div class="form-group" id="screenshot-group">
+          <label>Payment Photos <span class="required">*</span></label>
+          <div class="file-upload" id="drop-zone">
+            <input type="file" id="screenshot" accept="image/*" multiple aria-required="true">
+            <div class="file-upload-icon">📷</div>
+            <div class="file-upload-text">
+              Click or drag photos here<br>
+              <small>Add one or more — each is compressed to ~300 KB</small>
+            </div>
+          </div>
+          <div class="photo-preview-grid" id="preview-grid" hidden></div>
+          <p class="field-error" id="screenshot-error" hidden></p>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-full" id="submit-btn" disabled>Save Payment</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/images.js"></script>
+  <script src="js/storage.js"></script>
+  <script>
+    const form = document.getElementById("payment-form");
+    const amountInput = document.getElementById("amount");
+    const dateInput = document.getElementById("date-paid");
+    const screenshotInput = document.getElementById("screenshot");
+    const dropZone = document.getElementById("drop-zone");
+    const previewGrid = document.getElementById("preview-grid");
+    const messageEl = document.getElementById("message");
+    const submitBtn = document.getElementById("submit-btn");
+    const amountGroup = document.getElementById("amount-group");
+    const dateGroup = document.getElementById("date-group");
+    const screenshotGroup = document.getElementById("screenshot-group");
+    const amountError = document.getElementById("amount-error");
+    const dateError = document.getElementById("date-error");
+    const screenshotError = document.getElementById("screenshot-error");
+
+    amountInput.placeholder = LOAN_CONFIG.monthlyPayment.toFixed(2);
+
+    const selectedPhotos = new Map();
+
+    function showMessage(text, type) {
+      messageEl.innerHTML = `<div class="${type}-message">${text}</div>`;
+    }
+
+    function clearFieldError(group, errorEl) {
+      group.classList.remove("invalid");
+      errorEl.hidden = true;
+      errorEl.textContent = "";
+    }
+
+    function setFieldError(group, errorEl, message) {
+      group.classList.add("invalid");
+      errorEl.hidden = false;
+      errorEl.textContent = message;
+    }
+
+    function isAmountValid() {
+      const amount = parseFloat(amountInput.value);
+      return !isNaN(amount) && amount > 0;
+    }
+
+    function isDateValid() {
+      return dateInput.value.trim() !== "";
+    }
+
+    function isPhotosValid() {
+      return selectedPhotos.size > 0;
+    }
+
+    function updateSubmitState() {
+      submitBtn.disabled = !(isAmountValid() && isDateValid() && isPhotosValid());
+    }
+
+    function validateForm() {
+      let valid = true;
+      clearFieldError(amountGroup, amountError);
+      clearFieldError(dateGroup, dateError);
+      clearFieldError(screenshotGroup, screenshotError);
+
+      if (!isAmountValid()) {
+        setFieldError(amountGroup, amountError, "Amount paid is required.");
+        valid = false;
+      }
+
+      if (!isDateValid()) {
+        setFieldError(dateGroup, dateError, "Date paid is required.");
+        valid = false;
+      }
+
+      if (!isPhotosValid()) {
+        setFieldError(screenshotGroup, screenshotError, "At least one photo is required.");
+        valid = false;
+      }
+
+      return valid;
+    }
+
+    function renderPreviews() {
+      previewGrid.innerHTML = "";
+
+      if (selectedPhotos.size === 0) {
+        previewGrid.hidden = true;
+        updateSubmitState();
+        return;
+      }
+
+      previewGrid.hidden = false;
+      clearFieldError(screenshotGroup, screenshotError);
+
+      selectedPhotos.forEach((photo, id) => {
+        const item = document.createElement("div");
+        item.className = "photo-preview-item";
+        item.innerHTML = `
+          <img src="${photo.previewUrl}" alt="Payment photo preview">
+          <button type="button" class="photo-delete-btn" aria-label="Remove photo">&times;</button>
+          <span class="photo-size-label">${photo.sizeLabel || "..."}</span>
+        `;
+
+        item.querySelector(".photo-delete-btn").addEventListener("click", () => {
+          URL.revokeObjectURL(photo.previewUrl);
+          selectedPhotos.delete(id);
+          renderPreviews();
+        });
+
+        previewGrid.appendChild(item);
+      });
+
+      updateSubmitState();
+    }
+
+    async function addFiles(files) {
+      const imageFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
+      if (imageFiles.length === 0) {
+        setFieldError(screenshotGroup, screenshotError, "Please upload image files only.");
+        updateSubmitState();
+        return;
+      }
+
+      for (const file of imageFiles) {
+        const id = createPhotoId();
+        const previewUrl = URL.createObjectURL(file);
+        selectedPhotos.set(id, {
+          file,
+          previewUrl,
+          sizeLabel: "Pending",
+        });
+      }
+
+      renderPreviews();
+      screenshotInput.value = "";
+
+      for (const [id, photo] of selectedPhotos) {
+        if (photo.sizeLabel !== "Pending") continue;
+        try {
+          const compressed = await compressImageFile(photo.file);
+          photo.compressed = compressed;
+          photo.sizeLabel = formatPhotoSize(compressed);
+        } catch {
+          photo.sizeLabel = "Error";
+        }
+        renderPreviews();
+      }
+    }
+
+    screenshotInput.addEventListener("change", (e) => {
+      if (e.target.files.length) addFiles(e.target.files);
+    });
+
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("dragover");
+    });
+
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+      if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+    });
+
+    amountInput.addEventListener("input", () => {
+      clearFieldError(amountGroup, amountError);
+      updateSubmitState();
+    });
+
+    dateInput.addEventListener("input", () => {
+      clearFieldError(dateGroup, dateError);
+      updateSubmitState();
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!validateForm()) {
+        showMessage("Please fill in all required fields before submitting.", "error");
+        return;
+      }
+
+      const amount = parseFloat(amountInput.value);
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Saving...";
+
+      try {
+        const screenshots = [];
+
+        for (const [id, photo] of selectedPhotos) {
+          const data = photo.compressed || (await compressImageFile(photo.file));
+          screenshots.push({ id, data });
+        }
+
+        await addPayment({
+          amountPaid: amount,
+          datePaid: dateInput.value,
+          screenshots,
+          createdAt: new Date().toISOString(),
+        });
+
+        selectedPhotos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+
+        showMessage("Payment saved! Redirecting...", "success");
+        setTimeout(() => {
+          window.location.href = "track-payments.html";
+        }, 1000);
+      } catch (err) {
+        showMessage("Failed to save payment. Please try again.", "error");
+        submitBtn.textContent = "Save Payment";
+        updateSubmitState();
+      }
+    });
+
+    updateSubmitState();
+  </script>
+</body>
+</html>

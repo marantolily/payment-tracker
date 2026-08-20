@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Family Loan Tracker</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/auth.js"></script>
+  <script>requireAuth();</script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Family Loan Tracker</h1>
+      <p>Payment tracker for your loan with Mom &amp; Dad</p>
+    </header>
+
+    <div class="card balance-card">
+      <div class="balance-label">Total Remaining</div>
+      <div class="balance-amount" id="remaining-balance">$22,012.32</div>
+      <div class="balance-sub" id="paid-so-far">$0.00 paid so far</div>
+    </div>
+
+    <div class="due-banner" id="due-banner">
+      <span id="due-banner-text"></span>
+    </div>
+
+    <div class="card">
+      <div class="details-grid">
+        <div class="detail-item">
+          <div class="label">Monthly Payment</div>
+          <div class="value" id="detail-monthly">$458.59</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Original Total</div>
+          <div class="value" id="detail-total">$22,012.32</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Loan Amount</div>
+          <div class="value">$20,000.00</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Interest Rate</div>
+          <div class="value">4.6% / 48 mo</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <a href="add-payment.html" class="btn btn-primary">Add Payment</a>
+      <a href="track-payments.html" class="btn btn-secondary">Track Payments</a>
+    </div>
+  </div>
+
+  <script src="js/storage.js"></script>
+  <script>
+    async function loadDashboard() {
+      const remaining = await getRemainingBalance();
+      const totalPaid = await getTotalPaid();
+      const schedule = await getPaymentScheduleStatus();
+      const monthly = formatCurrency(LOAN_CONFIG.monthlyPayment);
+
+      document.getElementById("remaining-balance").textContent = formatCurrency(remaining);
+      document.getElementById("paid-so-far").textContent =
+        formatCurrency(totalPaid) + " paid so far";
+      document.getElementById("detail-monthly").textContent = monthly;
+      document.getElementById("detail-total").textContent =
+        formatCurrency(LOAN_CONFIG.totalOwed);
+
+      const banner = document.getElementById("due-banner");
+      const bannerText = document.getElementById("due-banner-text");
+
+      banner.className = "due-banner";
+
+      if (schedule.status === "paid_off") {
+        banner.classList.add("paid-off");
+        bannerText.innerHTML = "Loan paid off — you're all caught up!";
+      } else if (schedule.status === "missed") {
+        banner.classList.add("missed");
+        bannerText.innerHTML =
+          `<strong>Missed payment</strong> — it was due on <strong>${schedule.dueDateFormatted}</strong>. Pay ${monthly} now.`;
+      } else if (schedule.status === "due_today") {
+        banner.classList.add("due-today");
+        bannerText.innerHTML =
+          `<strong>${monthly} is due today</strong> (${schedule.dueDateFormatted}).`;
+      } else {
+        bannerText.innerHTML =
+          `Next payment of <strong>${monthly}</strong> is due on <strong>${schedule.dueDateFormatted}</strong>.`;
+      }
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>

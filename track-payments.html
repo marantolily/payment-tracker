@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Track Payments — Family Loan Tracker</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/auth.js"></script>
+  <script>requireAuth();</script>
+</head>
+<body>
+  <div class="container">
+    <a href="index.html" class="back-link">&larr; Back to Dashboard</a>
+
+    <header>
+      <h1>Payment History</h1>
+      <p>All payments from oldest to newest</p>
+    </header>
+
+    <div class="card">
+      <div class="summary-bar">
+        <div class="summary-stat">
+          <div class="label">Total Remaining</div>
+          <div class="value" id="remaining-balance">$22,012.32</div>
+        </div>
+        <div class="summary-stat">
+          <div class="label">Total Paid</div>
+          <div class="value" id="total-paid">$0.00</div>
+        </div>
+      </div>
+
+      <div id="table-container"></div>
+    </div>
+
+    <div class="actions" style="margin-top: 1.25rem;">
+      <a href="add-payment.html" class="btn btn-primary btn-full">Add Payment</a>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="modal-close">&times;</button>
+      <img id="modal-image" alt="Payment photo">
+    </div>
+  </div>
+
+  <script src="js/images.js"></script>
+  <script src="js/storage.js"></script>
+  <script>
+    const tableContainer = document.getElementById("table-container");
+    const modal = document.getElementById("modal");
+    const modalImage = document.getElementById("modal-image");
+    const modalClose = document.getElementById("modal-close");
+
+    modalClose.addEventListener("click", () => modal.classList.remove("active"));
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) modal.classList.remove("active");
+    });
+
+    function openModal(src) {
+      modalImage.src = src;
+      modal.classList.add("active");
+    }
+
+    function renderPhotoThumbs(payment) {
+      if (!payment.screenshots.length) {
+        return `<span class="no-photos">No photos</span>`;
+      }
+
+      return `
+        <div class="photo-thumb-list">
+          ${payment.screenshots
+            .map(
+              (photo) => `
+            <div class="photo-thumb-wrap">
+              <img
+                class="screenshot-thumb"
+                src="${photo.data}"
+                alt="Payment photo"
+                data-full="${photo.data}"
+              >
+              <button
+                type="button"
+                class="photo-delete-btn photo-delete-btn--saved"
+                data-payment-id="${payment.id}"
+                data-photo-id="${photo.id}"
+                aria-label="Delete photo"
+              >&times;</button>
+            </div>
+          `
+            )
+            .join("")}
+        </div>
+      `;
+    }
+
+    async function handleDeletePhoto(paymentId, photoId, button) {
+      if (!confirm("Delete this photo?")) return;
+
+      button.disabled = true;
+      try {
+        await deletePhotoFromPayment(paymentId, photoId);
+        await loadPayments();
+      } catch {
+        button.disabled = false;
+        alert("Failed to delete photo. Please try again.");
+      }
+    }
+
+    async function loadPayments() {
+      const payments = await getAllPayments();
+      const withBalances = computeRunningBalances(payments);
+      const remaining = await getRemainingBalance();
+      const totalPaid = await getTotalPaid();
+
+      document.getElementById("remaining-balance").textContent = formatCurrency(remaining);
+      document.getElementById("total-paid").textContent = formatCurrency(totalPaid);
+
+      if (payments.length === 0) {
+        tableContainer.innerHTML = `
+          <div class="empty-state">
+            <p>No payments recorded yet.</p>
+            <a href="add-payment.html" class="btn btn-primary">Add Your First Payment</a>
+          </div>
+        `;
+        return;
+      }
+
+      const rows = withBalances
+        .map(
+          (p) => `
+          <tr>
+            <td>${formatDate(p.datePaid)}</td>
+            <td class="amount-cell">${formatCurrency(p.amountPaid)}</td>
+            <td>${renderPhotoThumbs(p)}</td>
+            <td class="remaining-cell">${formatCurrency(p.remainingAfter)}</td>
+          </tr>
+        `
+        )
+        .join("");
+
+      tableContainer.innerHTML = `
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Date Paid</th>
+                <th>Amount Paid</th>
+                <th>Photos</th>
+                <th>Remaining</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+
+      tableContainer.querySelectorAll(".screenshot-thumb").forEach((img) => {
+        img.addEventListener("click", () => openModal(img.dataset.full));
+      });
+
+      tableContainer.querySelectorAll(".photo-delete-btn--saved").forEach((button) => {
+        button.addEventListener("click", (e) => {
+          e.stopPropagation();
+          handleDeletePhoto(
+            Number(button.dataset.paymentId),
+            button.dataset.photoId,
+            button
+          );
+        });
+      });
+    }
+
+    loadPayments();
+  </script>
+</body>
+</html>

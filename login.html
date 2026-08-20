@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Family Loan Tracker</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/auth.js"></script>
+  <script>
+    if (isAuthenticated()) {
+      window.location.replace(getReturnPage());
+    }
+  </script>
+</head>
+<body class="login-page">
+  <div class="container login-container">
+    <div class="card login-card">
+      <header>
+        <h1>Family Loan Tracker</h1>
+        <p>Enter password to continue</p>
+      </header>
+
+      <div id="login-error" class="error-message" hidden>Incorrect password. Try again.</div>
+
+      <form id="login-form" class="login-form">
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="current-password"
+            required
+            autofocus
+          >
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Enter</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById("login-form");
+    const passwordInput = document.getElementById("password");
+    const errorEl = document.getElementById("login-error");
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      errorEl.hidden = true;
+
+      if (login(passwordInput.value)) {
+        window.location.replace(getReturnPage());
+      } else {
+        errorEl.hidden = false;
+        passwordInput.value = "";
+        passwordInput.focus();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -14,7 +14,7 @@
 
     <header>
       <h1>Payment History</h1>
-      <p>All payments from oldest to newest</p>
+      <p>All payments from newest to oldest</p>
     </header>
 
     <div class="card">
@@ -30,6 +30,8 @@
       </div>
 
       <div id="table-container"></div>
+      <button type="button" class="btn btn-secondary" id="import-local">Import payments saved on this device</button>
+      <p id="import-status" role="status"></p>
     </div>
 
     <div class="actions" style="margin-top: 1.25rem;">
@@ -109,9 +111,9 @@
 
     async function loadPayments() {
       const payments = await getAllPayments();
-      const withBalances = computeRunningBalances(payments);
-      const remaining = await getRemainingBalance();
-      const totalPaid = await getTotalPaid();
+      const withBalances = computeRunningBalances(payments).reverse();
+      const remaining = getRemainingBalance(payments);
+      const totalPaid = getTotalPaid(payments);
 
       document.getElementById("remaining-balance").textContent = formatCurrency(remaining);
       document.getElementById("total-paid").textContent = formatCurrency(totalPaid);
@@ -163,7 +165,7 @@
         button.addEventListener("click", (e) => {
           e.stopPropagation();
           handleDeletePhoto(
-            Number(button.dataset.paymentId),
+            button.dataset.paymentId,
             button.dataset.photoId,
             button
           );
@@ -171,7 +173,27 @@
       });
     }
 
-    loadPayments();
+    const importButton = document.getElementById("import-local");
+    const importStatus = document.getElementById("import-status");
+
+    importButton.addEventListener("click", async () => {
+      importButton.disabled = true;
+      try {
+        const count = await importLocalPayments();
+        importStatus.textContent = count ? `Imported ${count} payment(s).` : "No new payments on this device.";
+        await loadPayments();
+      } catch (error) {
+        importStatus.textContent = error.message;
+      } finally {
+        importButton.disabled = false;
+      }
+    });
+
+    loadPayments().catch((error) => {
+      tableContainer.textContent = error.message;
+      document.getElementById("remaining-balance").textContent = "Unavailable";
+      document.getElementById("total-paid").textContent = "Unavailable";
+    });
   </script>
 </body>
 </html>

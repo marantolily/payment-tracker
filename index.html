@@ -55,9 +55,10 @@
   <script src="js/storage.js"></script>
   <script>
     async function loadDashboard() {
-      const remaining = await getRemainingBalance();
-      const totalPaid = await getTotalPaid();
-      const schedule = await getPaymentScheduleStatus();
+      const payments = await getAllPayments();
+      const remaining = getRemainingBalance(payments);
+      const totalPaid = getTotalPaid(payments);
+      const schedule = getPaymentScheduleStatus(payments);
       const monthly = formatCurrency(LOAN_CONFIG.monthlyPayment);
 
       document.getElementById("remaining-balance").textContent = formatCurrency(remaining);
@@ -89,7 +90,10 @@
       }
     }
 
-    loadDashboard();
+    loadDashboard().catch((error) => {
+      document.getElementById("remaining-balance").textContent = "Unavailable";
+      document.getElementById("paid-so-far").textContent = error.message;
+    });
   </script>
 </body>
 </html>

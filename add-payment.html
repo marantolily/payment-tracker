@@ -83,9 +83,12 @@
     amountInput.placeholder = LOAN_CONFIG.monthlyPayment.toFixed(2);
 
     const selectedPhotos = new Map();
+    const paymentId = crypto.randomUUID();
+    let saving = false;
 
     function showMessage(text, type) {
-      messageEl.innerHTML = `<div class="${type}-message">${text}</div>`;
+      messageEl.className = `${type}-message`;
+      messageEl.textContent = text;
     }
 
     function clearFieldError(group, errorEl) {
@@ -114,7 +117,7 @@
     }
 
     function updateSubmitState() {
-      submitBtn.disabled = !(isAmountValid() && isDateValid() && isPhotosValid());
+      submitBtn.disabled = saving || !(isAmountValid() && isDateValid() && isPhotosValid());
     }
 
     function validateForm() {
@@ -240,6 +243,7 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
+      if (saving) return;
       if (!validateForm()) {
         showMessage("Please fill in all required fields before submitting.", "error");
         return;
@@ -247,6 +251,7 @@
 
       const amount = parseFloat(amountInput.value);
 
+      saving = true;
       submitBtn.disabled = true;
       submitBtn.textContent = "Saving...";
 
@@ -259,10 +264,10 @@
         }
 
         await addPayment({
+          id: paymentId,
           amountPaid: amount,
           datePaid: dateInput.value,
           screenshots,
-          createdAt: new Date().toISOString(),
         });
 
         selectedPhotos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
@@ -272,7 +277,8 @@
           window.location.href = "track-payments.html";
         }, 1000);
       } catch (err) {
-        showMessage("Failed to save payment. Please try again.", "error");
+        showMessage(err.message || "Failed to save payment. Please try again.", "error");
+        saving = false;
         submitBtn.textContent = "Save Payment";
         updateSubmitState();
       }

@@ -29,60 +29,54 @@ function openDB() {
   });
 }
 
+async function paymentRequest(method = "GET", query = "", payment) {
+  const body = payment && JSON.stringify(payment);
+  if (body && body.length > 4_000_000) throw new Error("Too many photos for one payment upload.");
+  const response = await fetch("/api/payments" + query, {
+    method,
+    ...(body && { headers: { "Content-Type": "application/json" }, body }),
+  });
+  if (response.status === 401) goToLogin();
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Could not sync payments. Please try again.");
+  }
+  return response.json();
+}
+
 async function getAllPayments() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readonly");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const payments = request.result
-        .map(normalizePayment)
-        .sort((a, b) => new Date(a.datePaid) - new Date(b.datePaid));
-      resolve(payments);
-    };
-  });
+  const payments = await paymentRequest();
+  return payments.sort((a, b) =>
+    a.datePaid.localeCompare(b.datePaid) || a.id.localeCompare(b.id));
 }
 
-async function addPayment(payment) {
+function addPayment(payment) {
+  return paymentRequest("POST", "", payment);
+}
+
+async function getLocalPayments() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.add(normalizePayment(payment));
-
+    const request = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll();
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
-  });
+  }).finally(() => db.close());
 }
 
-async function updatePayment(payment) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.put(normalizePayment(payment));
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-  });
-}
-
-async function getPaymentById(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readonly");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.get(id);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const payment = request.result;
-      resolve(payment ? normalizePayment(payment) : null);
-    };
-  });
+async function importLocalPayments() {
+  const payments = await getLocalPayments();
+  const key = "loanTrackerImportSource";
+  const source = localStorage.getItem(key) || crypto.randomUUID();
+  localStorage.setItem(key, source);
+  const imported = new Set((await getAllPayments()).map((payment) => payment.id));
+  let count = 0;
+  for (const payment of payments) {
+    const id = "legacy-" + source + "-" + payment.id;
+    if (imported.has(id)) continue;
+    await addPayment({ ...normalizePayment(payment), id });
+    count++;
+  }
+  return count;
 }
 
 function normalizeScreenshots(payment) {
@@ -107,27 +101,20 @@ function normalizePayment(payment) {
   return normalized;
 }
 
-async function deletePhotoFromPayment(paymentId, photoId) {
-  const payment = await getPaymentById(paymentId);
-  if (!payment) return false;
-
-  payment.screenshots = payment.screenshots.filter((photo) => photo.id !== photoId);
-  await updatePayment(payment);
-  return true;
+function deletePhotoFromPayment(paymentId, photoId) {
+  return paymentRequest("DELETE", "?" + new URLSearchParams({ id: paymentId, photo: photoId }));
 }
 
 function createPhotoId() {
   return crypto.randomUUID();
 }
 
-async function getTotalPaid() {
-  const payments = await getAllPayments();
-  return payments.reduce((sum, p) => sum + p.amountPaid, 0);
+function getTotalPaid(payments) {
+  return payments.reduce((sum, payment) => sum + Math.round(payment.amountPaid * 100), 0) / 100;
 }
 
-async function getRemainingBalance() {
-  const totalPaid = await getTotalPaid();
-  return Math.max(0, LOAN_CONFIG.totalOwed - totalPaid);
+function getRemainingBalance(payments) {
+  return Math.max(0, LOAN_CONFIG.totalOwed - getTotalPaid(payments));
 }
 
 function formatCurrency(amount) {
@@ -173,10 +160,9 @@ function formatDateLong(date) {
   });
 }
 
-async function getPaymentScheduleStatus() {
-  const payments = await getAllPayments();
+function getPaymentScheduleStatus(payments) {
   const paymentsMade = payments.length;
-  const remaining = await getRemainingBalance();
+  const remaining = getRemainingBalance(payments);
 
   if (remaining <= 0) {
     return { status: "paid_off", paymentsMade };
@@ -213,9 +199,9 @@ async function getPaymentScheduleStatus() {
 }
 
 function computeRunningBalances(payments) {
-  let remaining = LOAN_CONFIG.totalOwed;
+  let remainingCents = Math.round(LOAN_CONFIG.totalOwed * 100);
   return payments.map((payment) => {
-    remaining = Math.max(0, remaining - payment.amountPaid);
-    return { ...payment, remainingAfter: remaining };
+    remainingCents = Math.max(0, remainingCents - Math.round(payment.amountPaid * 100));
+    return { ...payment, remainingAfter: remainingCents / 100 };
   });
 }
